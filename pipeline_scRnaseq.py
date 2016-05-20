@@ -82,6 +82,8 @@ software to be in the path:
 Requirements:
 
 * samtools >= 1.1
+* BASiCs
+* coda
 
 Pipeline output
 ===============
