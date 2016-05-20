@@ -399,7 +399,7 @@ class SingleCell(object):
         # test counts table has been set first
         try:
             assert self.counts_table.shape 
-        except AssertionError:
+        except:
             raise AttributeError("Counts table is missing. "
                                  "Please load a counts table "
                                  "before proceeding")
@@ -636,9 +636,12 @@ if __name__ == "__main__":
     ifile = "/ifs/projects/proj056/pipeline_scqc_steveTec/feature_counts.dir/001-1-feature_counts.tsv.gz"
     s1.add_counts_table(counts_matrix=ifile,
                         compression="gzip",
-                        remove_zeros=True)
+                        remove_zeros=True,
+                        cell_qc=qc_list)
     print s1.get_counts_qc().shape
     s2 = SingleCell()
+    #s2.counts_table_qc(cell_qc=qc_list, exprs_threshold=5)
+
     df = pd.read_table(ifile, compression="gzip",
                        index_col=0, header=0)
     s2.add_counts_table(counts_matrix=df,
