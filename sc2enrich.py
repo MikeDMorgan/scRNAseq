@@ -27,14 +27,54 @@ the smallest possible p-value as 0.01, 1000 permutations would be 0.001, etc.
 There is also an option to generate histograms for all categories and
 null distributions to check for artifacts.
 
-Input files
+Inputs
 -----------
 
 Expression table - gene expression table, with genes as rows and cells
-  as columns
+  as columns::
+
+            cell1    cell2    cell3 ...
+    gene1     .        .        .
+    gene2     .        .        .
+    gene3     .        .        .
+      .
+      .
+      .
 
 Category table - table mapping genes onto categories for testing.  Assumes
   two columns in the table labelled "Category" and "Gene"
+  e.g.::
+
+    Gene    Category
+    gene1   cat1 
+    gene2   cat2
+    gene1   cat3
+    gene3   cat4
+      .      .
+      .      .
+      .      .
+
+
+Options
+-------
+  `--permutations` - number of permutations to run to generate the
+  null distribution for each category
+
+  `--sample-size` - number of cells to downsample
+
+  `--gene-list` - a file containing genes of interest to test for
+  enrichment of categories.  One gene per line
+
+  `--gene-categories` - file containing the category table, mapping
+  genes to categories
+
+  `--min-category-size` - minimum number of genes in a category
+  to test for enrichment against.  This is useful for filtering
+  out categories where there is very little power to detect an
+  enrichment/depletion, but also where the distribution may
+  essentially just be 0's and 1's.
+  
+
 
 Usage
 -----
@@ -58,16 +98,18 @@ Command line options
 
 # TODO
 # repeated dictionary lookups/get_item calls
-# are expensive.  Use indexed arrays instead?
-
+# are expensive.
+# is there an alternative to permutation, i.e.
+# a distribution that adequately describes the data?
 
 import sys
 import CGAT.Experiment as E
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
-# import seaborn as sns
+# import matplotlib as mpl
 # import matplotlib.pyplot as plt
+# import seaborn as sns
 import random
 import collections
 import cProfile
@@ -155,6 +197,9 @@ def matchGenes(foreground_expression, background_expression):
 
         background_match.add(match_gene)
 
+    # E.info("{} background genes matched for "
+    #        "{} foreground genes".format(len(background_match),
+    #                                     len(fore_av.index)))
     return background_match
 
 
@@ -244,7 +289,7 @@ def generateNulls(express_table, cat_table, nperm, gene_list,
         # test each category
         # use functools.partial and map to perform
         # faster iteration over categories <- becomes
-        # a loop in C, much faster?
+        # a loop in C, not much faster
         cat_wrap = functools.partial(calculateOverlaps, 
                                      categories=categories,
                                      cat_table=cat_table,
@@ -252,12 +297,6 @@ def generateNulls(express_table, cat_table, nperm, gene_list,
                                      null_dist=null_dist,
                                      p=p)
         map(cat_wrap, cat_index)
-
-        # for cats in cat_index:
-        #     cat = categories[cats]
-        #     cat_genes = cat_table[cat_table["Category"] == cat].index
-        #     overlap = len(matched.intersection(cat_genes))
-        #     null_dist[cats, p] = overlap
 
     return null_dist
 
@@ -295,7 +334,9 @@ def calculateOverlaps(cats, categories, cat_table, matched,
 
     Returns
     -------
-    None
+    null_dist: numpy.ndarray
+      updated array with overlap between background
+      and tested category
     '''
 
     cat = categories[cats]
@@ -367,12 +408,21 @@ def main(argv=None):
                               sep="\t", header=0,
                               index_col=None)
     cat_table.index = cat_table["Gene"]
-    categories = [cx for cx in set(cat_table["Category"])]
-    cat_indx = [ic for ic, iy in enumerate(categories)]
 
     # generate a dictionary of frequency arrays
     # containing the null distributions
     E.info("Generating null distributions")
+
+    # only run on categories with a minimum size?
+    cat_sizes = cat_table["Category"].value_counts()
+    keep_cats =  cat_sizes[cat_sizes >= options.min_cat_size].index
+
+    E.info("{} categories contain more "
+           "than {} genes".format(len(keep_cats),
+                                  options.min_cat_size))
+    categories = [cx for cx in set(cat_table["Category"]) if cx in keep_cats]
+    cat_indx = [ic for ic, iy in enumerate(categories)]
+
     null_dist = generateNulls(express_table=log_expression,
                               cat_table=cat_table,
                               nperm=options.perms,
@@ -397,17 +447,33 @@ def main(argv=None):
     E.info("Testing statistical significance of overlap between "
            "null and gene list")
 
+    # calculate p-values, median of null and median absolute deviation of the null
     for ecat in cat_indx:
         cat = categories[ecat]
         right_p = 1 - sum([1 for vi in sorted(null_dist[ecat, :]) if vi < test_vals[cat]])/float(options.perms)
         left_p = 1 - sum([1 for li in sorted(null_dist[ecat, :]) if li > test_vals[cat]])/float(options.perms)
-        pval_dict[cat] = (left_p, right_p)
+        overlap_cat = int(test_vals[cat])
+        median_null = np.median(null_dist[ecat, :])
+        # 0.67448978501 is a normalization constant from a standard
+        # normal distribution.  Assumes median are drawn from a standard normal
+        # how robust is this?
+        mad = median(abs(null_dist[ecat, :] - median_null))/0.6744897501
+        pval_dict[cat] = (left_p, right_p, overlap_cat, median_null, mad)
 
     pval_df = pd.DataFrame(pval_dict).T
-    pval_df.columns = ["P_deplete", "P_enrich"]
+    pval_df.columns = ["P_deplete", "P_enrich", "GenesInCat",
+                       "MedianNullInCat", "MedianAbsolutDeviation"]
 
     # add category size information
-    pval_df.loc[:, "CategorySize"] = cat_table["Category"].value_counts()
+    pval_df.loc[:, "CategorySize"] = cat_sizes
+
+    # set p=0 to minimum based on number of permutations,
+    # i.e. if n=100, then min p=0.01, n=1000, p=0.001, etc
+    min_p = 1.0/options.perms
+    E.info("Minimum p-value set to {}".format(min_p))
+    pval_df.loc[pval_df["P_enrich"] < min_p, "P_enrich"] = min_p
+    pval_df.loc[pval_df["P_deplete"] < min_p, "P_deplete"] = min_p
+
     pval_df.to_csv(options.stdout, sep="\t", index_label="Category")
 
     # write footer and output benchmark information.
