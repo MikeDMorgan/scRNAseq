@@ -457,7 +457,7 @@ def main(argv=None):
         # 0.67448978501 is a normalization constant from a standard
         # normal distribution.  Assumes median are drawn from a standard normal
         # how robust is this?
-        mad = median(abs(null_dist[ecat, :] - median_null))/0.6744897501
+        mad = np.median(abs(null_dist[ecat, :] - median_null))/0.6744897501
         pval_dict[cat] = (left_p, right_p, overlap_cat, median_null, mad)
 
     pval_df = pd.DataFrame(pval_dict).T
