@@ -60,7 +60,8 @@ Options
   `--permutations` - number of permutations to run to generate the
   null distribution for each category
 
-  `--sample-size` - number of cells to downsample
+  `--sample-size` - number of cells to downsample, or the proportion
+  of the total dataset to down sample to. i.e. if 0.5 = 50% of cells
 
   `--gene-list` - a file containing genes of interest to test for
   enrichment of categories.  One gene per line
@@ -227,9 +228,10 @@ def generateNulls(express_table, cat_table, nperm, gene_list,
     gene_list: list
       list of genes of interest
 
-    sample_size: int
-      number of cells to downsample to when generating null and
-      matching on gene expression
+    sample_size: float
+      number of cells, or proportion of cells,
+      to downsample to when generating null and matching on
+      gene expression
 
     categories: list
       list of sorted unique categories agaisnt which to test enrichment
@@ -243,6 +245,11 @@ def generateNulls(express_table, cat_table, nperm, gene_list,
       dictionary of categories with frequency arrays
       describing the null distribution for each
     '''
+
+    if sample_size < 1:
+        sample_size = np.floor(express_table.shape[1] * sample_size)
+    else:
+        pass
 
     E.info("Downsampling expression table to {} cells".format(sample_size))
     total_cells = express_table.shape[1] - 1
@@ -363,7 +370,7 @@ def main(argv=None):
                       help="number of permutations to use to generate"
                       " the null distribution for each category")
 
-    parser.add_option("--sample-size", dest="sample_size", type="int",
+    parser.add_option("--sample-size", dest="sample_size", type="float",
                       help="number of cells to select for downsampling")
 
     parser.add_option("--gene-list", dest="gene_list", type="string",
