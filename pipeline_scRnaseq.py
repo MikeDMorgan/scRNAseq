@@ -159,6 +159,34 @@ def connect():
 # --------------------------------------------------- #
 
 
+@follows(mkdir("enrichment.dir"))
+@transform("WGCNA.dir/*.tsv",
+           regex("WGCNA.dir/(.+)_(.+)_(.+).tsv"),
+           add_inputs("%s" % PARAMS['category_file']),
+           r"enrichment.dir/\1-\2-\3_goslim.tsv")
+def testCategoryEnrichment(infiles, outfile):
+    '''
+    Test gene set for enrichment of categories
+    '''
+
+    gene_file = infiles[0]
+    category_file = infiles[1]
+
+    job_memory = "12G"
+    statement = '''
+    python /ifs/devel/projects/proj056/pipeline_scRnaseq/sc2enrich.py
+    --sample-size=0.5
+    --gene-list=%(gene_file)s
+    --gene-categories=%(category_file)s
+    --permutations=%(enrichment_perms)i
+    --min-category-size=5
+    --log=%(outfile)s.log
+    %(expression_file)s
+    > %(outfile)s
+    '''
+
+    P.run()
+
 # ---------------------------------------------------
 # Generic pipeline tasks
 @follows()

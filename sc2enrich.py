@@ -105,6 +105,7 @@ Command line options
 
 import sys
 import CGAT.Experiment as E
+import scEnrichment as scEn
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
